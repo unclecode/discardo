@@ -25,13 +25,39 @@ chrome.runtime.onMessage.addListener((message) => {
 
 // Function to extract domain from URL
 function getDomain(url) {
-  try {
-    return new URL(url).hostname;
-  } catch (e) {
-    console.error('Error parsing URL:', e);
-    return null;
+    try {
+      // Handle chrome:// URLs
+      if (url.startsWith('chrome://')) {
+        return 'chrome://internal';
+      }
+      
+      // Handle edge:// URLs
+      if (url.startsWith('edge://')) {
+        return 'edge://internal';
+      }
+      
+      // Handle about: URLs
+      if (url.startsWith('about:')) {
+        return 'about:internal';
+      }
+      
+      // Handle file:// URLs
+      if (url.startsWith('file://')) {
+        return 'file://local';
+      }
+      
+      // Handle empty or invalid URLs
+      if (!url || url === 'about:blank' || url === 'about:newtab') {
+        return 'about:blank';
+      }
+  
+      // For regular URLs, parse normally
+      return new URL(url).hostname;
+    } catch (e) {
+      console.error('Error parsing URL:', e, 'URL:', url);
+      return 'invalid:url';
+    }
   }
-}
 
 // Function to check if a URL is whitelisted
 function isWhitelisted(url) {

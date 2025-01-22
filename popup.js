@@ -36,9 +36,9 @@ async function updateToggleButton(domain) {
   const result = await chrome.storage.sync.get(['whitelist']);
   const whitelist = result.whitelist || [];
   
-  const isEnabled = whitelist.includes(domain);
-  button.textContent = isEnabled ? 'Disable for this site' : 'Enable for this site';
-  button.className = `toggle-button ${isEnabled ? 'disabled' : ''}`;
+  const isWhitelisted = whitelist.includes(domain);
+  button.textContent = isWhitelisted ? 'Enable for this site' : 'Disable for this site';
+  button.className = `toggle-button ${!isWhitelisted ? 'disabled' : ''}`;
 }
 
 // Initialize current site information
