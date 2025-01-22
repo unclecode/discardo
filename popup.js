@@ -1,10 +1,13 @@
 // popup.js
+let currentTabUrl = '';
+let currentDomain = '';
+
 // Function to populate tab dropdown
 async function populateTabDropdown() {
   const tabs = await chrome.tabs.query({});
   const select = document.getElementById('tabSelector');
   select.innerHTML = '';
-  
+
   tabs.forEach(tab => {
     const option = document.createElement('option');
     option.value = tab.id;
@@ -17,11 +20,68 @@ async function populateTabDropdown() {
   });
 }
 
+// Get domain from URL
+function getDomain(url) {
+  try {
+    return new URL(url).hostname;
+  } catch (e) {
+    console.error('Error parsing URL:', e);
+    return null;
+  }
+}
+
+// Update toggle button state
+async function updateToggleButton(domain) {
+  const button = document.getElementById('toggleSite');
+  const result = await chrome.storage.sync.get(['whitelist']);
+  const whitelist = result.whitelist || [];
+  
+  const isEnabled = whitelist.includes(domain);
+  button.textContent = isEnabled ? 'Disable for this site' : 'Enable for this site';
+  button.className = `toggle-button ${isEnabled ? 'disabled' : ''}`;
+}
+
+// Initialize current site information
+async function initCurrentSite() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab && tab.url) {
+      currentTabUrl = tab.url;
+      currentDomain = getDomain(currentTabUrl);
+      
+      document.getElementById('currentSite').textContent = currentDomain;
+      await updateToggleButton(currentDomain);
+    }
+  } catch (error) {
+    console.error('Error initializing current site:', error);
+  }
+}
+
+// Toggle whitelist status for current site
+document.getElementById('toggleSite').addEventListener('click', async () => {
+  if (!currentDomain) return;
+
+  const result = await chrome.storage.sync.get(['whitelist']);
+  let whitelist = result.whitelist || [];
+  
+  if (whitelist.includes(currentDomain)) {
+    whitelist = whitelist.filter(domain => domain !== currentDomain);
+  } else {
+    whitelist.push(currentDomain);
+  }
+  
+  await chrome.storage.sync.set({ whitelist });
+  chrome.runtime.sendMessage({ type: 'settingsUpdated' });
+  
+  await updateToggleButton(currentDomain);
+});
+
 // Initial population of dropdown and stats
 document.addEventListener('DOMContentLoaded', async () => {
   await Promise.all([
     populateTabDropdown(),
-    updateMemoryStats()
+    updateMemoryStats(),
+    initCurrentSite()
   ]);
 });
 
@@ -53,17 +113,14 @@ function formatBytes(bytes) {
 // Function to update memory statistics
 async function updateMemoryStats() {
   try {
-    // Get tab info
     const tabs = await chrome.tabs.query({});
     const totalTabs = tabs.length;
     const discardedCount = tabs.filter(tab => tab.discarded).length;
     const activeTabs = totalTabs - discardedCount;
-    
-    // Estimate memory (rough estimate of 100MB per active tab)
-    const estimatedMemory = activeTabs * 100 * 1024 * 1024; // 100MB in bytes per active tab
-    const memorySaved = discardedCount * 100 * 1024 * 1024; // 100MB per discarded tab
-    
-    // Update UI
+
+    const estimatedMemory = activeTabs * 100 * 1024 * 1024;
+    const memorySaved = discardedCount * 100 * 1024 * 1024;
+
     document.getElementById('totalMemory').textContent = 
       `~${formatBytes(estimatedMemory)} (${activeTabs} active tabs)`;
     document.getElementById('discardedCount').textContent = 
@@ -81,11 +138,20 @@ document.getElementById('discardSelected').addEventListener('click', async () =>
   const select = document.getElementById('tabSelector');
   const tabId = parseInt(select.value);
   const statusDiv = document.getElementById('tabStatus');
-  
+
   try {
+    const tab = await chrome.tabs.get(tabId);
+    const domain = getDomain(tab.url);
+    const result = await chrome.storage.sync.get(['whitelist']);
+    const whitelist = result.whitelist || [];
+    
+    if (whitelist.includes(domain)) {
+      statusDiv.textContent = 'Cannot discard whitelisted tab!';
+      return;
+    }
+
     await chrome.tabs.discard(tabId);
     statusDiv.textContent = 'Tab successfully discarded!';
-    // Refresh the dropdown and stats
     await Promise.all([
       populateTabDropdown(),
       updateMemoryStats()
